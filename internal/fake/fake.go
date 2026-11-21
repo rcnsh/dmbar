@@ -14,6 +14,7 @@ import (
 	"errors"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/rcnsh/dmbar/internal/core"
 )
@@ -28,6 +29,12 @@ type Backend struct {
 	// SendErr, if set, fails every Send.
 	SendErr error
 	Older   []core.Message
+	// Histories, if it has the thread, is its full history, oldest first,
+	// and History pages through it.
+	Histories map[core.ThreadID][]core.Message
+	// Echo makes Send play the sent message back as a live event, as
+	// Instagram does.
+	Echo bool
 
 	mu     sync.Mutex
 	closed bool
@@ -85,8 +92,23 @@ func (b *Backend) Snapshot(context.Context) (core.User, []core.Thread, error) {
 	return b.Me, b.Threads, nil
 }
 
-func (b *Backend) History(context.Context, core.ThreadID, core.MessageID, int) ([]core.Message, bool, error) {
-	return b.Older, false, nil
+func (b *Backend) History(_ context.Context, thread core.ThreadID, before core.MessageID, n int) ([]core.Message, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	all, ok := b.Histories[thread]
+	if !ok {
+		return b.Older, false, nil
+	}
+	end := len(all)
+	if before != "" {
+		for i, m := range all {
+			if m.ID == before {
+				end = i
+			}
+		}
+	}
+	start := max(0, end-n)
+	return append([]core.Message{}, all[start:end]...), start > 0, nil
 }
 
 func (b *Backend) NewOTID() string {
@@ -96,13 +118,24 @@ func (b *Backend) NewOTID() string {
 	return "otid-" + strconv.Itoa(b.otid)
 }
 
-func (b *Backend) Send(_ context.Context, _ core.ThreadID, text, _ string, _ core.MessageID) error {
+func (b *Backend) Send(_ context.Context, thread core.ThreadID, text, otid string, replyTo core.MessageID) error {
 	if b.SendErr != nil {
 		return b.SendErr
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.Sent = append(b.Sent, text)
+	if b.Echo && !b.closed {
+		m := core.Message{
+			ID: core.MessageID("sent-" + otid), Thread: thread, Sender: b.Me.ID, At: time.Now(),
+			Text: text, ContentType: "TEXT", OTID: otid, ReplyTo: core.Quote{ID: replyTo},
+		}
+		b.Histories[thread] = append(b.Histories[thread], m)
+		select {
+		case b.events <- core.MessageAdded{Message: m}:
+		default:
+		}
+	}
 	return nil
 }
 

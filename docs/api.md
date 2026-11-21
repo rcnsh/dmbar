@@ -20,6 +20,7 @@ It prints one JSON line on stdout once it is listening, then logs to stderr:
 | `-data-dir` | `~/Library/Application Support/dmbar` | Holds the encrypted login (`session.enc`) and a lock file. One daemon per directory. |
 | `-log-level` | `info` | `debug`, `info`, `warn` or `error`. |
 | `-exit-with-stdin` | off | Exit when stdin closes, so the daemon ends with the app that started it. |
+| `-demo` | off | Serve a made-up inbox with no account, no network and no files. Sent messages echo back. For working on the app. |
 
 The app passes the token in `DMBAR_TOKEN`. Without it, `dmbard` makes one up and adds `"token"` to the ready line; that is for running it by hand.
 

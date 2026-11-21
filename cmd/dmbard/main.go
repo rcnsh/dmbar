@@ -32,6 +32,7 @@ import (
 	"github.com/rcnsh/dmbar/internal/api"
 	"github.com/rcnsh/dmbar/internal/core"
 	"github.com/rcnsh/dmbar/internal/engine"
+	"github.com/rcnsh/dmbar/internal/fake"
 	"github.com/rcnsh/dmbar/internal/instagram"
 	"github.com/rcnsh/dmbar/internal/session"
 )
@@ -56,6 +57,7 @@ func run() error {
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for the saved login")
 	level := flag.String("log-level", "info", "zerolog level for stderr: debug, info, warn or error")
 	parent := flag.Bool("exit-with-stdin", false, "exit when stdin closes, so the daemon ends with the app that started it")
+	demo := flag.Bool("demo", false, "serve a made-up inbox with no account and no network, for working on the app")
 	flag.Parse()
 
 	lvl, err := zerolog.ParseLevel(*level)
@@ -72,14 +74,16 @@ func run() error {
 	if *dataDir, err = filepath.Abs(*dataDir); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(*dataDir, 0o700); err != nil {
-		return err
+	if !*demo { // the demo touches no files, so it can run beside the real one
+		if err := os.MkdirAll(*dataDir, 0o700); err != nil {
+			return err
+		}
+		unlock, err := lock(*dataDir)
+		if err != nil {
+			return err
+		}
+		defer unlock()
 	}
-	unlock, err := lock(*dataDir)
-	if err != nil {
-		return err
-	}
-	defer unlock()
 
 	token, generated := os.Getenv(tokenEnv), false
 	if token == "" {
@@ -90,12 +94,18 @@ func run() error {
 		token, generated = hex.EncodeToString(raw), true
 	}
 
-	eng := engine.New(engine.Options{
+	opts := engine.Options{
 		Log:        log,
 		Sessions:   session.New(*dataDir),
 		NewBackend: func() core.Backend { return instagram.New(log, refreshEvery) },
 		NewLogin:   func() engine.Login { return instagram.NewLogin(log) },
-	})
+	}
+	if *demo {
+		opts.Sessions = fake.DemoSessions()
+		opts.NewBackend = func() core.Backend { return fake.Demo() }
+		opts.NewLogin = func() engine.Login { return fake.Login{} }
+	}
+	eng := engine.New(opts)
 	defer eng.Close()
 
 	ln, err := net.Listen("tcp", *addr)

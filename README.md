@@ -2,14 +2,16 @@
 
 Instagram DMs as a small macOS menu bar box, with notifications and replying.
 
-This repo holds the backend so far: `dmbard`, a local daemon that logs in to Instagram, keeps the live connection up and serves a small HTTP API on loopback. The menu bar app is built on top of that API and isn't written yet.
+Two parts: `dmbard`, a Go daemon that logs in to Instagram, keeps the live connection up and serves a small HTTP API on loopback; and the menu bar app in `app/`, native Swift with Liquid Glass, which starts the daemon and talks only to that API.
+
+v1 reads and sends text: the inbox, conversations with history, replies, reactions and read state shown, typing both ways, notifications with an inline reply. Photos, reels and voice notes show as a labelled placeholder. Starting a conversation, message requests and sending media aren't there yet.
 
 Personal project. It uses Instagram's unofficial web protocol, which Instagram's terms don't allow: the account can be challenged or locked.
 
 ## How it fits together
 
 ```
-menu bar app (to build)
+app/                the menu bar app (SwiftUI in an NSPopover), macOS 26+
       │  HTTP + server-sent events on 127.0.0.1, bearer token   → docs/api.md
 cmd/dmbard
       │
@@ -24,13 +26,25 @@ go.mau.fi/mautrix-meta/pkg/instameow   the protocol itself (upstream)
 
 `internal/core` and `internal/instagram` come from [termeownal](https://github.com/ericliswan/termeownal) at commit `bb046f1`, with its tests. They are the part that knows how to drive `instameow`: restoring a session, loading the inbox, the three kinds of thread ID, turning Instagram's deltas into events, reconnecting after sleep. termeownal's terminal UI, SQLite cache and passphrase fallback were left behind.
 
-## Running it
+## The app
 
-Needs Go 1.26 or newer.
+Needs Go 1.26 or newer and Xcode 26 or newer.
+
+```sh
+make install    # build, copy to /Applications/dmbar.app and open
+make app-demo   # the built app on a made-up inbox, popover open; no account
+make check      # gofmt, vet, Go tests with the race detector, Swift tests
+```
+
+The app lives in the menu bar only. Log in on Instagram's own page from the welcome screen; the session is kept on this Mac. ⌃⌥I opens it from anywhere, and the shortcut, read receipts, typing indicator, notifications and launch at login are in its settings. If a menu bar manager hides the icon, the shortcut still opens the box, hanging from the top right of the screen.
+
+The daemon's log is `~/Library/Logs/dmbar/dmbard.log`.
+
+## The daemon on its own
 
 ```sh
 make run     # 127.0.0.1:7878, token "dev", debug logs
-make check   # gofmt, vet, tests with the race detector
+make demo    # the same on a made-up inbox
 make build   # bin/dmbard
 ```
 

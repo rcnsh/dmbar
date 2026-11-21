@@ -1,10 +1,22 @@
 # dmbar
 
-Instagram DMs in the macOS menu bar. Personal tool for one user and one account. The Go daemon `dmbard` exists; the menu bar app does not yet. README.md has the layout.
+Instagram DMs in the macOS menu bar. Personal tool for one user and one account, installed on his Mac only: no notarisation, no updater, no public release. The Go daemon `dmbard` is at the root; the Swift app is in `app/`. README.md has the layout and what v1 covers.
 
 ## Before finishing a change
 
-Run `make check`. It must pass.
+Run `make check`. It must pass. For anything visible, look at it: `make app-demo` opens the real app on a made-up inbox (`DMBAR_ROUTE=settings`, or a thread ID such as `101`, picks the screen). Never test against the real account by sending messages; Jacob does the real sends.
+
+To screenshot the popover, capture its window only, never the screen: find the window ID of the `Dmbar` process with `CGWindowListCopyWindowInfo` and pass it to `screencapture -x -o -l <id>`. A lone window capture shows the glass as opaque.
+
+## The app (`app/`)
+
+- SwiftPM, built into a bundle by `app/build.sh`, the way terminus's Mac app is. Swift 6 with main-actor default isolation; types that cross actors or are tested as values are marked `nonisolated`.
+- `Inbox` is a value type holding everything known about the account. Events from the daemon go in through `apply`; it makes no calls, so its tests need nothing running. `AppModel` owns it, the `Client` and the `Daemon` process, and is the only thing views call.
+- `DaemonTests` runs the Swift client against the real `bin/dmbard -demo`, so a wire-format change that breaks the app fails a test.
+- Liquid Glass goes on the controls layer only (buttons, the composer, chips, toasts). Message bubbles and list rows are plain fills: glass on scrolling content is costly and hard to read.
+- The popover hangs from the menu bar item. A menu bar manager can hide the item, leaving its window with no height, so `show()` falls back to an invisible anchor under the menu bar. Jacob runs Thaw, so this path is the usual one on his Mac.
+- NSApplication holds its delegate weakly: keep `Main.delegate` static.
+- Read receipts off: opening a conversation records the newest message's time in `Inbox.seenMs` (saved in UserDefaults) and tells Instagram nothing. The unread mark is `thread.unread && newest > seen`.
 
 ## Rules
 
