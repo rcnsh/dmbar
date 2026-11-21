@@ -7,9 +7,13 @@ import WebKit
 ///
 /// The web view keeps nothing on disk, so each login starts clean and
 /// closing the window leaves no second session behind.
-final class LoginWindow: NSObject, NSWindowDelegate, WKHTTPCookieStoreObserver {
+final class LoginWindow: NSObject, NSWindowDelegate, WKHTTPCookieStoreObserver, WKNavigationDelegate {
     /// The cookies the daemon uses, of which the first three are required.
     private static let wanted = ["sessionid", "csrftoken", "ds_user_id", "mid", "ig_did", "rur", "shbid", "shbts"]
+
+    /// The home page, which shows the login form to a logged-out visitor.
+    /// `/accounts/login/` answers an embedded web view with an empty 429.
+    private static let start = URL(string: "https://www.instagram.com/")!
 
     private var window: NSWindow?
     private var store: WKHTTPCookieStore?
@@ -47,7 +51,8 @@ final class LoginWindow: NSObject, NSWindowDelegate, WKHTTPCookieStoreObserver {
         w.delegate = self
         w.center()
         window = w
-        web.load(URLRequest(url: URL(string: "https://www.instagram.com/accounts/login/")!))
+        web.navigationDelegate = self
+        web.load(URLRequest(url: Self.start))
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
@@ -83,6 +88,36 @@ final class LoginWindow: NSObject, NSWindowDelegate, WKHTTPCookieStoreObserver {
             alert.messageText = "Couldn't finish logging in"
             alert.informativeText = problem
             if let window { await alert.beginSheetModal(for: window) }
+        } else {
+            close()
+        }
+    }
+
+    /// Says so when Instagram refuses the page, which would otherwise be a
+    /// blank window.
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        if response.isForMainFrame, let http = response.response as? HTTPURLResponse, http.statusCode >= 400 {
+            let why = http.statusCode == 429
+                ? "Instagram is limiting requests from this network. Wait a few minutes and try again."
+                : "Instagram answered with an error (\(http.statusCode))."
+            Task { await self.fail(why) }
+        }
+        return .allow
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        Task { await self.fail(error.localizedDescription) }
+    }
+
+    private func fail(_ why: String) async {
+        guard let window, window.attachedSheet == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = "Couldn't open Instagram's login page"
+        alert.informativeText = why
+        alert.addButton(withTitle: "Try Again")
+        alert.addButton(withTitle: "Close")
+        if await alert.beginSheetModal(for: window) == .alertFirstButtonReturn {
+            (window.contentView as? WKWebView)?.load(URLRequest(url: Self.start))
         } else {
             close()
         }
