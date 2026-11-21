@@ -1,0 +1,12 @@
+# Reference checkout of ericliswan/termeownal, kept while the backend is
+# being extracted from it. Delete the folder and this entry when done.
+/termeownal/
+
+# Build output
+/bin/
+
+# Login data: never commit these.
+*.enc
+cookies*.json
+
+.DS_Store

@@ -1,0 +1,141 @@
+// termeownal — a terminal client for Instagram DMs.
+// Copyright (C) 2026 ericliswan
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+package core
+
+import "time"
+
+// Event is something a Backend reports on its Events channel. Delivery is
+// at least once, so applying an event twice must change nothing.
+type Event interface{ event() }
+
+// Status is the state of the live connection.
+type Status int
+
+// Connection states.
+const (
+	Connecting Status = iota
+	Connected
+	Reconnecting
+)
+
+// StatusChanged reports a change in the live connection.
+type StatusChanged struct{ Status Status }
+
+// AuthFailed means the login no longer works. Stop retrying and ask the user
+// to log in again. Err wraps one of the sentinel errors where one fits.
+type AuthFailed struct{ Err error }
+
+// ResyncNeeded means local state can't be caught up from events: take a new
+// Snapshot, then Connect again.
+type ResyncNeeded struct{}
+
+// MessageAdded is a new message, or the echo of one sent from here.
+type MessageAdded struct{ Message Message }
+
+// ThreadRead means the user read the thread up to Until on another device.
+type ThreadRead struct {
+	Thread ThreadID
+	Until  time.Time
+}
+
+// ReadReceipt means member User of Thread has read it up to UpTo. Receipts
+// can arrive late and more than once: keep the latest UpTo.
+type ReadReceipt struct {
+	Thread ThreadID
+	User   UserID
+	UpTo   time.Time
+}
+
+// Typing means member User of Thread started (Active) or stopped typing.
+// Without a stop, it ends a few seconds after the last start. It isn't
+// stored.
+type Typing struct {
+	Thread ThreadID
+	User   UserID
+	Active bool
+}
+
+// ReactionAdded means a member reacted to message Message, replacing their
+// earlier reaction to it.
+type ReactionAdded struct {
+	Thread   ThreadID
+	Message  MessageID
+	Reaction Reaction
+}
+
+// ReactionRemoved means member User removed their reaction to message
+// Message. The service may name only the reaction's ID: User is then 0, and
+// Message may not be the message reacted to. The app finds both from the
+// stored reaction before showing the removal.
+type ReactionRemoved struct {
+	Thread  ThreadID
+	Message MessageID
+	User    UserID
+	ID      string
+}
+
+// MessageEdited means message Message's sender changed its text to Text at
+// At. An edit older than the message's EditedAt is stale: ignore it.
+type MessageEdited struct {
+	Thread  ThreadID
+	Message MessageID
+	Text    string
+	At      time.Time
+}
+
+// MessageUnsent means message Message's sender took it back.
+type MessageUnsent struct {
+	Thread  ThreadID
+	Message MessageID
+}
+
+// ThreadMuted means the user muted or unmuted the thread, possibly on
+// another device.
+type ThreadMuted struct {
+	Thread ThreadID
+	Muted  bool
+}
+
+// ThreadUpdated carries a thread's current details. It comes before the
+// first event for a thread the backend hadn't reported yet.
+type ThreadUpdated struct{ Thread Thread }
+
+// SeqAdvanced means every event sent before it belongs to sequence ID SeqID.
+// Save it only after those events are stored.
+type SeqAdvanced struct {
+	SeqID int64
+	At    time.Time
+}
+
+// SessionChanged means the login data changed: call ExportAuth and save it.
+type SessionChanged struct{}
+
+func (StatusChanged) event()   {}
+func (AuthFailed) event()      {}
+func (ResyncNeeded) event()    {}
+func (MessageAdded) event()    {}
+func (ThreadRead) event()      {}
+func (ReadReceipt) event()     {}
+func (Typing) event()          {}
+func (ReactionAdded) event()   {}
+func (ReactionRemoved) event() {}
+func (MessageEdited) event()   {}
+func (MessageUnsent) event()   {}
+func (ThreadMuted) event()     {}
+func (ThreadUpdated) event()   {}
+func (SeqAdvanced) event()     {}
+func (SessionChanged) event()  {}

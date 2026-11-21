@@ -1,0 +1,163 @@
+// termeownal — a terminal client for Instagram DMs.
+// Copyright (C) 2026 ericliswan
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+package instagram
+
+import (
+	"cmp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/rs/zerolog"
+	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
+
+	"github.com/rcnsh/dmbar/internal/core"
+)
+
+// contentReactionLog is the content type of a history entry that records a
+// reaction. It isn't a chat line (docs/instagram-ids.md §7).
+const contentReactionLog = "REACTION_LOG_XMAT"
+
+// knownSubtypes are the thread subtypes upstream knows. Others get a label
+// in the title: they might be chats dmbar can't show, such as
+// end-to-end encrypted ones (docs/instameow.md).
+var knownSubtypes = []slidetypes.ThreadSubtype{
+	slidetypes.ThreadSubtypeDirect,
+	slidetypes.ThreadSubtypeDirectBusiness,
+	slidetypes.ThreadSubtypeAIBot,
+	slidetypes.ThreadSubtypeGroup,
+}
+
+// idsOf returns a thread's short and long IDs.
+func idsOf(t *slidetypes.ThreadInfo) threadIDs {
+	return threadIDs{short: t.ID, long: t.ThreadID}
+}
+
+// convertThread converts a thread for the logged-in user me.
+func convertThread(t *slidetypes.ThreadInfo, me core.UserID, log zerolog.Logger) core.Thread {
+	key := core.ThreadID(t.ThreadKey)
+	out := core.Thread{
+		ID:           key,
+		IsGroup:      t.IsGroup || len(t.Users) > 1,
+		LastActivity: t.LastActivityTimestampMS.Time,
+		Unread:       true,
+		Muted:        t.IsMuted != nil && *t.IsMuted,
+		Image:        t.ThreadImageURL,
+	}
+	var names []string
+	for _, u := range t.Users {
+		if u == nil {
+			continue
+		}
+		out.Members = append(out.Members, core.User{ID: core.UserID(u.InteropMessagingUserFBID), Username: u.Username, Name: u.FullName, Avatar: u.ProfilePicURL})
+		names = append(names, cmp.Or(u.FullName, u.Username))
+	}
+	if out.IsGroup {
+		out.Title = cmp.Or(t.ThreadTitle, strings.Join(names, ", "))
+	} else {
+		out.Title = cmp.Or(strings.Join(names, ", "), t.ThreadTitle)
+	}
+	// shortcut: input_mode isn't checked as its usual values aren't known;
+	// label on it too once the debug log shows them.
+	log.Debug().Str("subtype", string(t.ThreadSubtype)).Int("input_mode", t.InputMode).Msg("thread")
+	if !slices.Contains(knownSubtypes, t.ThreadSubtype) {
+		out.Title += " [" + string(t.ThreadSubtype) + "]"
+	}
+	for _, rr := range t.SlideReadReceipts {
+		who, upTo := core.UserID(rr.ParticipantFBID), rr.WatermarkTimestampMS.Time
+		if who == me {
+			// Read if my receipt reaches the last activity, as upstream decides.
+			out.Unread = upTo.Before(out.LastActivity)
+			continue
+		}
+		if out.ReadUpTo == nil {
+			out.ReadUpTo = map[core.UserID]time.Time{}
+		}
+		out.ReadUpTo[who] = upTo
+	}
+	if t.MarkedAsUnread {
+		out.Unread = true
+	}
+	if t.SlideMessages != nil {
+		out.Messages = convertMessages(t.SlideMessages, key, log)
+	}
+	return out
+}
+
+// convertMessages converts a page of messages, newest first as Instagram
+// sends them, to chat lines oldest first.
+func convertMessages(page *slidetypes.SlideMessages, key core.ThreadID, log zerolog.Logger) []core.Message {
+	var out []core.Message
+	for _, e := range slices.Backward(page.Edges) {
+		if m, ok := convertMessage(e.Node, key, log); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// convertMessage converts a message in thread key. It reports false for
+// entries that aren't chat lines.
+func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger) (core.Message, bool) {
+	if m == nil || m.ContentType == contentReactionLog {
+		return core.Message{}, false
+	}
+	// Upstream keys messages by id; message_id is empty in some responses.
+	id := cmp.Or(m.ID, m.MessageID)
+	if id == "" {
+		log.Debug().Str("content_type", m.ContentType).Msg("message without an ID skipped")
+		return core.Message{}, false
+	}
+	log.Debug().Str("content_type", m.ContentType).Msg("message")
+	out := core.Message{
+		ID:          core.MessageID(id),
+		Thread:      key,
+		Sender:      core.UserID(m.SenderFBID),
+		At:          m.TimestampMS.Time,
+		Text:        m.TextBody,
+		ContentType: m.ContentType,
+		OTID:        m.OfflineThreadingID,
+	}
+	for _, e := range m.SlideEditHistory {
+		if e.TimestampMS.After(out.EditedAt) {
+			out.EditedAt = e.TimestampMS.Time
+		}
+	}
+	if m.RepliedToMessageID != "" {
+		out.ReplyTo.ID = core.MessageID(m.RepliedToMessageID)
+		if q := m.RepliedToMessage; q != nil {
+			out.ReplyTo.Sender = core.UserID(q.SenderFBID)
+			out.ReplyTo.Text = q.TextBody
+			out.ReplyTo.ContentType = q.ContentType
+		}
+	}
+	for _, r := range m.Reactions {
+		if r, ok := convertReaction(r); ok {
+			out.Reactions = append(out.Reactions, r)
+		}
+	}
+	return out, true
+}
+
+// convertReaction converts a reaction, reporting false if it lacks a sender
+// or an emoji.
+func convertReaction(r *slidetypes.Reaction) (core.Reaction, bool) {
+	if r == nil || r.SenderFBID == 0 || r.Reaction == "" {
+		return core.Reaction{}, false
+	}
+	return core.Reaction{User: core.UserID(r.SenderFBID), Emoji: r.Reaction, ID: r.LogMessageID}, true
+}
