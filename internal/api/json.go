@@ -52,6 +52,15 @@ type messageJSON struct {
 	Reactions   []reactionJSON `json:"reactions"`
 	EditedAtMS  int64          `json:"edited_at_ms"`
 	Unsent      bool           `json:"unsent"`
+	Media       []mediaJSON    `json:"media"`
+}
+
+type mediaJSON struct {
+	Kind       string `json:"kind"`
+	URL        string `json:"url"`
+	PreviewURL string `json:"preview_url"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
 }
 
 type quoteJSON struct {
@@ -140,6 +149,10 @@ func toMessage(m core.Message) messageJSON {
 		Reactions:   make([]reactionJSON, len(m.Reactions)),
 		EditedAtMS:  ms(m.EditedAt),
 		Unsent:      m.Unsent,
+		Media:       make([]mediaJSON, len(m.Media)),
+	}
+	for i, md := range m.Media {
+		out.Media[i] = mediaJSON{Kind: string(md.Kind), URL: md.URL, PreviewURL: md.Preview, Width: md.Width, Height: md.Height}
 	}
 	if m.ReplyTo.ID != "" {
 		out.ReplyTo = &quoteJSON{ID: string(m.ReplyTo.ID), SenderID: id(m.ReplyTo.Sender), Text: m.ReplyTo.Text, ContentType: m.ReplyTo.ContentType}

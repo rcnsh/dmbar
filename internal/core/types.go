@@ -99,6 +99,32 @@ type Message struct {
 	// Unsent means the sender took the message back. Text, ContentType and
 	// Reactions are then empty.
 	Unsent bool
+	// Media holds the photos, videos, GIFs or sticker the message carries,
+	// in order. It is empty for text and for media dmbar can't show.
+	Media []Media
+}
+
+// MediaKind says what a Media is.
+type MediaKind string
+
+// Media kinds.
+const (
+	MediaImage   MediaKind = "image"
+	MediaVideo   MediaKind = "video"
+	MediaGIF     MediaKind = "gif"
+	MediaSticker MediaKind = "sticker"
+)
+
+// Media is one attachment the app can show. Its URLs are signed and expire,
+// so they are only good until the message is fetched again.
+type Media struct {
+	Kind MediaKind
+	// URL is the full image, or the video or animation; Preview is a still
+	// image for it. Either may be "", not both.
+	URL     string
+	Preview string
+	// Width and Height are the preview's size in pixels, 0 if not known.
+	Width, Height int
 }
 
 // Reaction is a member's reaction to a message.

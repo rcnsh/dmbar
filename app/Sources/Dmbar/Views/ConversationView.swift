@@ -5,10 +5,14 @@ struct ConversationView: View {
     @Environment(AppModel.self) private var model
     var threadId: String
 
-    @State private var draft = ""
+    @State private var draft = Composer()
+    @State private var showsEmoji = false
+    /// The highlighted `:shortcode:` suggestion.
+    @State private var suggestion = 0
+    /// A shortcode the user dismissed with Escape, until they type on.
+    @State private var dismissedCode: String?
     @State private var replyingTo: Message?
     @State private var position = ScrollPosition(edge: .bottom)
-    @FocusState private var composerFocused: Bool
 
     private var thread: ChatThread? { model.inbox.thread(threadId) }
     private var messages: [Message] { model.inbox.messages[threadId] ?? [] }
@@ -19,7 +23,8 @@ struct ConversationView: View {
             history
             composer
         }
-        .onAppear { composerFocused = true }
+        .task { draft.focus() }
+        .onChange(of: model.viewing == nil) { _, closed in if closed { draft.focus() } }
     }
 
     // MARK: Header
@@ -76,7 +81,10 @@ struct ConversationView: View {
                         startsRun: previous?.senderId != message.senderId,
                         endsRun: next?.senderId != message.senderId,
                         quoteAuthor: quoteAuthor(message),
-                        onReply: { replyingTo = message; composerFocused = true }
+                        myReaction: message.reactions.first { $0.userId == model.inbox.me?.id }?.emoji,
+                        onReply: { replyingTo = message; draft.focus() },
+                        onReact: { model.toggleReaction($0, on: message) },
+                        onOpenMedia: { model.viewing = Viewing(media: message.media, index: $0) }
                     )
                     .id(message.id)
                 }
@@ -177,26 +185,47 @@ struct ConversationView: View {
                 .padding(.horizontal, 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if !suggestions.isEmpty {
+                ShortcodeSuggestions(emoji: suggestions, highlighted: suggestion) { completeShortcode(with: $0) }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             GlassEffectContainer(spacing: 8) {
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField("Message…", text: $draft, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...5)
-                        .focused($composerFocused)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 19, style: .continuous))
-                        .onKeyPress(.return, phases: .down) { press in
-                            if press.modifiers.contains(.shift) {
-                                draft += "\n"
-                            } else {
-                                send()
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ComposerField(composer: draft, placeholder: "Message", onKey: key)
+                            .frame(height: draft.height)
+                            .overlay(alignment: .topLeading) {
+                                if draft.text.isEmpty {
+                                    Text("Message…").foregroundStyle(.tertiary).allowsHitTesting(false)
+                                }
                             }
-                            return .handled
+                            .padding(.vertical, 9)
+                        Button { showsEmoji.toggle() } label: {
+                            Image(systemName: "face.smiling")
+                                .font(.system(size: 15))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24, height: 36)
+                                .contentShape(.rect)
                         }
-                        .onChange(of: draft) { _, new in
-                            model.typing(in: threadId, active: !new.isEmpty)
+                        .buttonStyle(.plain)
+                        .help("Emoji (or type : and a name, like :fire:)")
+                        .accessibilityLabel("Emoji")
+                        .popover(isPresented: $showsEmoji, arrowEdge: .top) {
+                            EmojiPicker { e in
+                                draft.insert(e)
+                                draft.focus()
+                            }
                         }
+                    }
+                    .padding(.leading, 14)
+                    .padding(.trailing, 6)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 19, style: .continuous))
+                    .onChange(of: draft.text) {
+                        model.typing(in: threadId, active: !draft.text.isEmpty)
+                        suggestion = 0
+                        if partialCode?.query != dismissedCode { dismissedCode = nil }
+                        expandTypedCode()
+                    }
                     Button(action: send) {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 14, weight: .bold))
@@ -205,7 +234,7 @@ struct ConversationView: View {
                     .buttonStyle(.glassProminent)
                     .buttonBorderShape(.circle)
                     .tint(Color(red: 0.5, green: 0.34, blue: 0.96))
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(draft.isBlank || model.viewing != nil)
                     .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityLabel("Send")
                 }
@@ -215,17 +244,71 @@ struct ConversationView: View {
         .padding(.top, 6)
         .padding(.bottom, 12)
         .animation(Theme.slide, value: replyingTo?.id)
+        .animation(.snappy(duration: 0.18), value: suggestions.isEmpty)
+    }
+
+    // MARK: Emoji in the composer
+
+    /// The `:shortcode` being typed before the caret.
+    private var partialCode: (range: Range<String.Index>, query: String)? {
+        Shortcode.partial(in: draft.text, before: draft.caretIndex)
+    }
+
+    private var suggestions: [Emoji] {
+        guard let code = partialCode, code.query != dismissedCode else { return [] }
+        return EmojiCatalog.search(code.query, limit: 6)
+    }
+
+    /// Keys from the composer: Return sends, unless suggestions are showing,
+    /// when it, Tab, the arrows and Escape work the suggestions.
+    private func key(_ key: ComposerKey) -> Bool {
+        let shown = suggestions
+        if suggestion >= shown.count { suggestion = 0 }  // the list got shorter as the caret moved
+        switch key {
+        case .send:
+            if let e = shown[safe: suggestion] { completeShortcode(with: e) } else { send() }
+            return true
+        case .tab:
+            guard let e = shown[safe: suggestion] else { return false }
+            completeShortcode(with: e)
+            return true
+        case .up, .down:
+            guard !shown.isEmpty else { return false }
+            suggestion = (suggestion + (key == .up ? -1 : 1) + shown.count) % shown.count
+            return true
+        case .escape:
+            guard let code = partialCode?.query, !shown.isEmpty else { return false }
+            dismissedCode = code
+            return true
+        }
+    }
+
+    private func completeShortcode(with emoji: Emoji) {
+        guard let code = partialCode else { return }
+        draft.replace(code.range, with: emoji.char + " ")
+        model.settings.useEmoji(emoji.char)
+    }
+
+    /// Turns a `:code:` into its emoji as its closing colon is typed.
+    private func expandTypedCode() {
+        guard let (range, emoji) = Shortcode.closed(in: draft.text, before: draft.caretIndex) else { return }
+        draft.replace(range, with: emoji)
     }
 
     private func send() {
-        let text = draft
+        // Sent as shown: codes became emoji while typing, or were left as text.
+        let text = draft.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        draft = ""
+        draft.clear()
+        dismissedCode = nil
         model.send(text, to: threadId, replyTo: replyingTo)
         replyingTo = nil
     }
 }
 
+extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
 // MARK: Rows
 
 private struct MessageRow: View {
@@ -236,7 +319,14 @@ private struct MessageRow: View {
     var startsRun: Bool
     var endsRun: Bool
     var quoteAuthor: String?
+    /// The user's own reaction to this message.
+    var myReaction: String?
     var onReply: () -> Void
+    var onReact: (String) -> Void
+    var onOpenMedia: (Int) -> Void
+
+    @State private var hovering = false
+    @State private var reacting = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 6) {
@@ -259,7 +349,16 @@ private struct MessageRow: View {
                     .padding(.vertical, 6)
                     .background(.primary.opacity(0.05), in: .rect(cornerRadius: 12, style: .continuous))
                 }
-                bubble
+                HStack(alignment: .center, spacing: 4) {
+                    if mine { reactButton }
+                    VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                        if !message.media.isEmpty, !message.unsent {
+                            MediaGrid(media: message.media, open: onOpenMedia)
+                        }
+                        if message.media.isEmpty || !message.text.isEmpty || message.unsent { bubble }
+                    }
+                    if !mine { reactButton }
+                }
                 if !message.reactions.isEmpty {
                     Text(reactionText)
                         .font(.caption)
@@ -275,9 +374,18 @@ private struct MessageRow: View {
             if !mine { Spacer(minLength: 46) }
         }
         .padding(.top, startsRun ? 8 : 2)
+        .onHover { hovering = $0 }
         .contextMenu {
             if !message.unsent {
                 Button("Reply", systemImage: "arrowshape.turn.up.left", action: onReply)
+                Menu("React", systemImage: "face.smiling") {
+                    ForEach(QuickReactions.all, id: \.self) { e in
+                        Button(myReaction.map(e.sameEmoji) == true ? "\(e)  ✓" : e) { onReact(e) }
+                    }
+                }
+                if let myReaction {
+                    Button("Remove Reaction", systemImage: "minus.circle") { onReact(myReaction) }
+                }
                 if !message.text.isEmpty {
                     Button("Copy", systemImage: "doc.on.doc") {
                         NSPasteboard.general.clearContents()
@@ -289,8 +397,42 @@ private struct MessageRow: View {
         .help(message.date.formatted(date: .abbreviated, time: .shortened))
     }
 
+    /// A smiley beside the bubble while the pointer is over the message,
+    /// opening the reactions.
+    private var reactButton: some View {
+        Button { reacting = true } label: {
+            Image(systemName: "face.smiling")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .opacity(!message.unsent && (hovering || reacting) ? 1 : 0)
+        .allowsHitTesting(!message.unsent)
+        .help("React")
+        .accessibilityLabel("React")
+        .popover(isPresented: $reacting, arrowEdge: .top) {
+            ReactionPicker(current: myReaction) { e in
+                reacting = false
+                onReact(e)
+            }
+        }
+    }
+
     @ViewBuilder private var bubble: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if !message.unsent, let count = message.text.jumboEmojiCount {
+            Text(message.text)
+                .font(.system(size: count == 1 ? 46 : 34))
+                .textSelection(.enabled)
+                .padding(.vertical, 2)
+        } else {
+            plainBubble(shape)
+        }
+    }
+
+    @ViewBuilder private func plainBubble(_ shape: RoundedRectangle) -> some View {
         Group {
             if message.unsent {
                 Text("Message unsent").italic().foregroundStyle(.secondary)
@@ -319,9 +461,10 @@ private struct MessageRow: View {
 
     /// Each emoji once, with a count when more than one person used it.
     private var reactionText: String {
+        // Grouped without variation selectors: "❤️" and "❤" are one heart.
         var counts: [(String, Int)] = []
         for r in message.reactions {
-            if let i = counts.firstIndex(where: { $0.0 == r.emoji }) { counts[i].1 += 1 } else { counts.append((r.emoji, 1)) }
+            if let i = counts.firstIndex(where: { $0.0.sameEmoji(as: r.emoji) }) { counts[i].1 += 1 } else { counts.append((r.emoji, 1)) }
         }
         return counts.map { $0.1 > 1 ? "\($0.0) \($0.1)" : $0.0 }.joined(separator: " ")
     }

@@ -26,9 +26,19 @@ struct RootView: View {
             }
         }
         .animation(Theme.slide, value: screen)
+        .overlay {
+            if let viewing = model.viewing {
+                MediaViewer(viewing: viewing)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: model.viewing == nil)
         .overlay(alignment: .bottom) { toast }
+        .onChange(of: model.route) { model.viewing = nil }
         .onExitCommand {
-            if model.route != .list { model.route = .list } else { NSApp.keyWindow?.performClose(nil) }
+            if model.viewing != nil {
+                model.viewing = nil
+            } else if model.route != .list { model.route = .list } else { NSApp.keyWindow?.performClose(nil) }
         }
     }
 

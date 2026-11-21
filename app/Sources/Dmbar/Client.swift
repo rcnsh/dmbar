@@ -100,6 +100,14 @@ nonisolated struct Client: Sendable {
         return r.otid
     }
 
+    /// Sets the user's reaction to a message, replacing any earlier one, or
+    /// with `remove` takes `emoji` off it.
+    func react(thread: String, message: String, emoji: String, remove: Bool) async throws {
+        struct Body: Encodable { var emoji: String }
+        let path = "v1/threads/\(thread)/messages/\(message)/reaction"
+        let _: Empty = try await call(remove ? "DELETE" : "PUT", path, body: Body(emoji: emoji))
+    }
+
     func markRead(thread: String, messageId: String, atMs: Int64) async throws {
         struct Body: Encodable { var messageId: String; var atMs: Int64 }
         let _: Empty = try await call("POST", "v1/threads/\(thread)/read", body: Body(messageId: messageId, atMs: atMs))

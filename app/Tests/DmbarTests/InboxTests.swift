@@ -153,7 +153,7 @@ private func inbox() -> Inbox {
         let comment = parser.feed(": ping")
         let nameOnly = parser.feed("event: message_added")
         #expect(comment == nil && nameOnly == nil)
-        let json = #"data: {"message":{"id":"m1","thread_id":"20","sender_id":"2","at_ms":1700000000123,"text":"yo","content_type":"TEXT","otid":"","reply_to":null,"reactions":[{"user_id":"1","emoji":"x","id":"r"}],"edited_at_ms":0,"unsent":false}}"#
+        let json = #"data: {"message":{"id":"m1","thread_id":"20","sender_id":"2","at_ms":1700000000123,"text":"yo","content_type":"TEXT","otid":"","reply_to":null,"reactions":[{"user_id":"1","emoji":"x","id":"r"}],"edited_at_ms":0,"unsent":false,"media":[{"kind":"image","url":"https://cdn.example/a.jpg","preview_url":"","width":1080,"height":1350}]}}"#
         let fed = parser.feed(json)
         let (name, data) = try #require(fed)
         guard case .messageAdded(let m)? = try ServerEvent.decode(name: name, data: data) else {
@@ -161,6 +161,7 @@ private func inbox() -> Inbox {
             return
         }
         #expect(m.atMs == 1_700_000_000_123 && m.threadId == "20" && m.reactions.first?.userId == "1")
+        #expect(m.media.first?.full?.absoluteString == "https://cdn.example/a.jpg" && m.media.first?.aspect == 0.8)
     }
 
     @Test func `the state event decodes, with IDs past 2^53 intact`() throws {

@@ -8,7 +8,13 @@
 package fake
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"math"
 	"time"
 
 	"github.com/rcnsh/dmbar/internal/core"
@@ -37,7 +43,7 @@ func Demo() *Backend {
 		msg(101, mara, ago(25*time.Hour), "I rebuilt my whole settings screen around it"),
 		msg(101, me, ago(3*time.Hour), "send a screenshot when it's done"),
 		msg(101, mara, ago(12*time.Minute), "ok it's done"),
-		{ID: "demo-photo", Thread: 101, Sender: mara.ID, At: ago(11 * time.Minute), ContentType: "IMAGE"},
+		{ID: "demo-photo", Thread: 101, Sender: mara.ID, At: ago(11 * time.Minute), ContentType: "IMAGE", Media: []core.Media{demoPhoto()}},
 		msg(101, mara, ago(10*time.Minute), "what do you think? too much blur or just enough"),
 	}
 	maraChat[2].Reactions = []core.Reaction{{User: me.ID, Emoji: "🔥", ID: "r1"}}
@@ -67,6 +73,7 @@ func Demo() *Backend {
 	}
 	inesChat := []core.Message{
 		msg(103, ines, ago(3*24*time.Hour), "the print arrived!"),
+		{ID: "demo-photos", Thread: 103, Sender: ines.ID, At: ago(3*24*time.Hour - time.Minute), ContentType: "IMAGE", Media: []core.Media{demoPhoto(), demoPhoto(), demoPhoto()}},
 		{ID: "demo-reel", Thread: 103, Sender: ines.ID, At: ago(2 * 24 * time.Hour), ContentType: "REEL_SHARE"},
 	}
 
@@ -126,4 +133,38 @@ func (b *Backend) emit(ev core.Event) {
 // starts connected.
 func DemoSessions() *Sessions {
 	return &Sessions{Saved: &core.Session{Auth: core.AuthData("demo")}}
+}
+
+// demoPhoto is a made-up screenshot: a soft gradient with a few frosted
+// panels, as a data: URL so the demo needs no network.
+func demoPhoto() core.Media {
+	const w, h = 600, 750
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	inPanel := func(x, y int) bool {
+		panels := [][4]int{{40, 60, 560, 200}, {40, 240, 560, 520}, {40, 560, 300, 700}, {320, 560, 560, 700}}
+		for _, p := range panels {
+			if x >= p[0] && x < p[2] && y >= p[1] && y < p[3] {
+				return true
+			}
+		}
+		return false
+	}
+	for y := range h {
+		for x := range w {
+			t := float64(x+y) / float64(w+h)
+			r := 90 + 140*t + 20*math.Sin(float64(y)/90)
+			g := 70 + 60*(1-t)
+			b := 220 - 60*t
+			if inPanel(x, y) {
+				r, g, b = r+(255-r)*0.45, g+(255-g)*0.45, b+(255-b)*0.45
+			}
+			img.Set(x, y, color.RGBA{uint8(r), uint8(g), uint8(b), 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err) // encoding an in-memory RGBA can't fail
+	}
+	url := "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+	return core.Media{Kind: core.MediaImage, URL: url, Preview: url, Width: w, Height: h}
 }

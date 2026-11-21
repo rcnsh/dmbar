@@ -61,6 +61,8 @@ final class Settings {
     }
     /// Per-thread marks for conversations seen here with read receipts off.
     var seenMs: [String: Int64] { didSet { defaults.set(seenMs, forKey: "seenMs") } }
+    /// Emoji the user picked or reacted with, most recent first.
+    private(set) var recentEmoji: [String] { didSet { defaults.set(recentEmoji, forKey: "recentEmoji") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -78,6 +80,12 @@ final class Settings {
             shortcut = defaults.data(forKey: "shortcut").flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) }
         }
         seenMs = (defaults.dictionary(forKey: "seenMs") as? [String: Int64]) ?? [:]
+        recentEmoji = defaults.stringArray(forKey: "recentEmoji") ?? []
+    }
+
+    /// Puts an emoji first among the recent ones.
+    func useEmoji(_ emoji: String) {
+        recentEmoji = Array(([emoji] + recentEmoji.filter { $0 != emoji }).prefix(24))
     }
 
     /// Whether macOS opens dmbar at login. The system owns the answer.

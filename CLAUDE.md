@@ -16,6 +16,9 @@ To screenshot the popover, capture its window only, never the screen: find the w
 - Liquid Glass goes on the controls layer only (buttons, the composer, chips, toasts). Message bubbles and list rows are plain fills: glass on scrolling content is costly and hard to read.
 - The popover hangs from the menu bar item. A menu bar manager can hide the item, leaving its window with no height, so `show()` falls back to an invisible anchor under the menu bar. Jacob runs Thaw, so this path is the usual one on his Mac.
 - NSApplication holds its delegate weakly: keep `Main.delegate` static.
+- The composer is an `NSTextView` (`ComposerField`), driven through the `Composer` object, not a SwiftUI `TextField`. Text or caret changes made to a `TextField`'s binding while keys were arriving didn't always reach the screen: a sent message stayed in the field and went out again, and an inserted emoji was typed over or crashed on a stale caret. Change the composer's text only through `Composer`.
+- `:shortcode:` names and the picker's emoji come from GitHub's gemoji. `EmojiData.swift` is generated: rerun `app/Support/make-emoji.sh` to update it, never edit it.
+- Photos load straight from Instagram's CDN (no login needed) into `ImageCache`, in memory only. The URLs expire, which is fine while history is fetched fresh each launch. A file opened in Preview goes to `$TMPDIR/dmbar-opened`, emptied on first use each run; Save to Downloads is the only lasting copy.
 - Read receipts off: opening a conversation records the newest message's time in `Inbox.seenMs` (saved in UserDefaults) and tells Instagram nothing. The unread mark is `thread.unread && newest > seen`.
 
 ## Rules

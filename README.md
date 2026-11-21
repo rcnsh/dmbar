@@ -4,7 +4,7 @@ Instagram DMs as a small macOS menu bar box, with notifications and replying.
 
 Two parts: `dmbard`, a Go daemon that logs in to Instagram, keeps the live connection up and serves a small HTTP API on loopback; and the menu bar app in `app/`, native Swift with Liquid Glass, which starts the daemon and talks only to that API.
 
-v1 reads and sends text: the inbox, conversations with history, replies, reactions and read state shown, typing both ways, notifications with an inline reply. Photos, reels and voice notes show as a labelled placeholder. Starting a conversation, message requests and sending media aren't there yet.
+It reads and sends text: the inbox, conversations with history, replies, reacting and reactions shown, read state, typing both ways, notifications with an inline reply. Photos, GIFs, stickers and videos show in the conversation and open in a viewer; view-once media, reels, shared posts and voice notes show as a labelled placeholder. Emoji come from a picker in the composer or by name, typing `:fire:` the way Slack and GitHub do. Starting a conversation, message requests and sending media aren't there yet.
 
 Personal project. It uses Instagram's unofficial web protocol, which Instagram's terms don't allow: the account can be challenged or locked.
 

@@ -38,6 +38,8 @@ nonisolated struct Message: Codable, Hashable, Identifiable, Sendable {
     var reactions: [Reaction]
     var editedAtMs: Int64
     var unsent: Bool
+    /// Photos, videos, GIFs or a sticker, in order; empty for text.
+    var media: [Media] = []
 
     var date: Date { Date(timeIntervalSince1970: Double(atMs) / 1000) }
 
@@ -46,6 +48,31 @@ nonisolated struct Message: Codable, Hashable, Identifiable, Sendable {
         if unsent { return "Message unsent" }
         return text.isEmpty ? ContentLabel.label(for: contentType) : text
     }
+}
+
+/// One attachment that can be shown. Its URLs expire: they come fresh with
+/// each history fetch and need no login.
+nonisolated struct Media: Codable, Hashable, Sendable {
+    /// "image", "video", "gif" or "sticker". A string, so a kind a newer
+    /// daemon adds doesn't stop the message decoding.
+    var kind: String
+    /// The full image, or the video or animation.
+    var url: String
+    /// A still for it.
+    var previewUrl: String
+    var width: Int
+    var height: Int
+
+    /// The still to show in the conversation.
+    var thumbnail: URL? { URL(string: previewUrl.isEmpty && !plays ? url : previewUrl) }
+    /// What opens in the viewer.
+    var full: URL? { URL(string: url.isEmpty && !plays ? previewUrl : url) }
+    /// Width over height, when the size is known.
+    var aspect: CGFloat? { width > 0 && height > 0 ? CGFloat(width) / CGFloat(height) : nil }
+    /// Plays rather than shows. A GIF sent as video is one of these.
+    var plays: Bool { kind == "video" }
+    /// Shown without a frame, like an emoji.
+    var isSticker: Bool { kind == "sticker" }
 }
 
 nonisolated struct ChatThread: Codable, Hashable, Identifiable, Sendable {

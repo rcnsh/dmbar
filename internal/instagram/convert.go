@@ -137,6 +137,7 @@ func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger
 			out.EditedAt = e.TimestampMS.Time
 		}
 	}
+	out.Media = convertMedia(m.Content.Content)
 	if m.RepliedToMessageID != "" {
 		out.ReplyTo.ID = core.MessageID(m.RepliedToMessageID)
 		if q := m.RepliedToMessage; q != nil {

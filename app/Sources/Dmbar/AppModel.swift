@@ -8,6 +8,12 @@ nonisolated enum Route: Hashable, Sendable {
     case settings
 }
 
+/// A message's media open in the viewer, at one of them.
+nonisolated struct Viewing: Hashable, Sendable {
+    var media: [Media]
+    var index: Int
+}
+
 /// The app's state and everything it can do. Views read it and call it;
 /// nothing else talks to the daemon.
 @Observable
@@ -27,6 +33,8 @@ final class AppModel {
     private(set) var loginInProgress = false
     /// A failed action, in words, shown briefly.
     var toast: String?
+    /// The photos open in the viewer, over the popover.
+    var viewing: Viewing?
 
     /// Called when a new message should be announced.
     var notify: ((ChatThread, Message) -> Void)?
@@ -39,6 +47,9 @@ final class AppModel {
     private var lastTypingSent: [String: Date] = [:]
     /// Threads with a read being sent to Instagram.
     private var markingRead: Set<String> = []
+    /// The last reaction request per message. Each waits for the one before,
+    /// so a quick react then un-react reaches Instagram in that order.
+    private var reactionQueue: [String: Task<Void, Never>] = [:]
 
     init(settings: Settings = Settings()) {
         self.settings = settings
@@ -224,6 +235,40 @@ final class AppModel {
 
     private func fail(_ id: UUID) {
         if let i = inbox.pending.firstIndex(where: { $0.id == id }) { inbox.pending[i].failed = true }
+    }
+
+    /// Sets the user's reaction to a message, or takes it off when it is
+    /// already that emoji. It shows at once; Instagram's echo changes nothing.
+    func toggleReaction(_ emoji: String, on message: Message) {
+        guard let client, let me = inbox.me?.id else { return }
+        let current = inbox.messages[message.threadId]?.first { $0.id == message.id }?.reactions.first { $0.userId == me }
+        let remove = current.map { $0.emoji.sameEmoji(as: emoji) } ?? false
+        if !remove { settings.useEmoji(emoji) }
+        // Kept as Instagram will echo it, without a variation selector.
+        let optimistic = remove ? nil : Reaction(userId: me, emoji: emoji.withoutVariationSelectors, id: "")
+        set(optimistic, on: message, me: me)
+        let previous = reactionQueue[message.id]
+        reactionQueue[message.id] = Task {
+            await previous?.value
+            do {
+                // Removal names the emoji as Instagram stored it.
+                try await client.react(thread: message.threadId, message: message.id, emoji: remove ? current?.emoji ?? emoji : emoji, remove: remove)
+            } catch {
+                // Undo only if nothing has replaced the optimistic reaction
+                // since, and put back the original with its ID.
+                let now = inbox.messages[message.threadId]?.first { $0.id == message.id }?.reactions.first { $0.userId == me }
+                if now == optimistic { set(current, on: message, me: me) }
+                toast = "Reaction not sent: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func set(_ reaction: Reaction?, on message: Message, me: String) {
+        if let reaction {
+            inbox.apply(.reactionAdded(threadId: message.threadId, messageId: message.id, reaction: reaction))
+        } else {
+            inbox.apply(.reactionRemoved(threadId: message.threadId, messageId: message.id, userId: me, reactionId: ""))
+        }
     }
 
     /// Tells the other side the user is typing, at most every few seconds,

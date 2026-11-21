@@ -106,11 +106,14 @@ A message:
   "reply_to": {"id": "mid.$xyz", "sender_id": "17841400000000001", "text": "quoted", "content_type": "TEXT"},
   "reactions": [{"user_id": "17841400000000001", "emoji": "❤", "id": "mid.$r1"}],
   "edited_at_ms": 0,
-  "unsent": false
+  "unsent": false,
+  "media": [{"kind": "image", "url": "https://scontent.cdninstagram.com/…", "preview_url": "https://…", "width": 1080, "height": 1350}]
 }
 ```
 
-`text` is empty for non-text messages: show something for `content_type` instead. `reply_to` is null when the message isn't a reply. `otid` is the ID the sender chose when sending; see Send.
+`text` is empty for non-text messages: show something for `content_type` instead, or `media` when it isn't empty. `reply_to` is null when the message isn't a reply. `otid` is the ID the sender chose when sending; see Send.
+
+`media` lists the photos, videos, GIFs and stickers a message carries, in order, and is `[]` otherwise. `kind` is `image`, `video`, `gif` or `sticker`. `url` is the full image, or the video or animation to play; `preview_url` is a still for it. Either can be `""`, not both. `width` and `height` are the preview's pixel size, 0 if unknown. The URLs point at Instagram's CDN, need no login, and are signed to expire, so don't keep them: fetching the history again gives fresh ones. View-once photos and videos are left out, so opening one here can't use up its view.
 
 ### `GET /v1/events`
 
@@ -206,4 +209,4 @@ Stops the account and deletes the saved login. It doesn't end the session on Ins
 
 ## Not there yet
 
-Starting a new conversation, message requests, sending and fetching media, inbox pages past the first, and searching users. `instameow` has calls for all of them (`docs/instameow.md` §6.2).
+Starting a new conversation, message requests, sending media, inbox pages past the first, and searching users. `instameow` has calls for all of them (`docs/instameow.md` §6.2).
