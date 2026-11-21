@@ -85,6 +85,13 @@ nonisolated struct Client: Sendable {
         return try await call("GET", "v1/threads/\(thread)/messages", query: q)
     }
 
+    /// A fresh ID for a send, chosen before sending so a retry can reuse it.
+    func newOTID() async throws -> String {
+        struct Reply: Decodable { var otid: String }
+        let r: Reply = try await call("POST", "v1/otid")
+        return r.otid
+    }
+
     /// Sends text and returns the send's `otid`.
     func send(thread: String, text: String, otid: String?, replyTo: String?) async throws -> String {
         struct Body: Encodable { var text: String; var otid: String?; var replyTo: String? }
@@ -132,9 +139,20 @@ nonisolated struct Client: Sendable {
                         throw APIError(code: "http", message: "The daemon refused the event stream.")
                     }
                     var parser = EventParser()
-                    for try await line in bytes.lines {
-                        guard let (name, data) = parser.feed(line) else { continue }
-                        if let event = try ServerEvent.decode(name: name, data: data) {
+                    // Split on "\n" alone. `bytes.lines` also breaks on
+                    // U+0085, U+2028 and U+2029, which message text can hold.
+                    var line: [UInt8] = []
+                    for try await byte in bytes {
+                        guard byte == 0x0A else {
+                            line.append(byte)
+                            continue
+                        }
+                        let text = String(decoding: line, as: UTF8.self)
+                        line.removeAll(keepingCapacity: true)
+                        guard let (name, data) = parser.feed(text) else { continue }
+                        // One event that can't be read is skipped: ending the
+                        // stream over it would end every later stream too.
+                        if let event = try? ServerEvent.decode(name: name, data: data) {
                             continuation.yield(event)
                         }
                     }

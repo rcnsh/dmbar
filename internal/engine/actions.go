@@ -121,6 +121,18 @@ func (e *Engine) History(ctx context.Context, thread core.ThreadID, before core.
 	return b.History(ctx, thread, before, n)
 }
 
+// NewOTID returns a fresh ID for a send. A caller that picks it before
+// sending can retry with the same one even when the first attempt's reply
+// never arrived.
+func (e *Engine) NewOTID() (string, error) {
+	b, _, cancel, err := e.backend(context.Background())
+	if err != nil {
+		return "", err
+	}
+	cancel()
+	return b.NewOTID(), nil
+}
+
 // Send sends text to thread, as a reply to replyTo unless it is "". otid
 // identifies the send: pass the same one to retry without a duplicate, or ""
 // for a new one. It returns the otid used; the sent message arrives as a

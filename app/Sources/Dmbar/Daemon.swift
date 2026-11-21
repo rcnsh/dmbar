@@ -26,8 +26,10 @@ final class Daemon {
     private var endpoint: Endpoint?
     /// Kept open: dmbard exits when its stdin closes, so it can't outlive the app.
     private var stdin: Pipe?
-    /// Called on the main actor when a daemon this object started exits.
-    var onExit: (() -> Void)?
+    /// How long a new daemon gets to say where it listens.
+    static let readyTimeout: Duration = .seconds(15)
+    /// Past this size the log starts again.
+    private static let maxLogBytes = 2_000_000
 
     static var logURL: URL {
         let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appending(path: "Logs/dmbar")
@@ -53,23 +55,34 @@ final class Daemon {
         let input = Pipe(), output = Pipe()
         p.standardInput = input
         p.standardOutput = output
-        FileManager.default.createFile(atPath: Self.logURL.path, contents: nil)
+        // Appended to, so a daemon that keeps failing doesn't erase why.
+        let size = (try? FileManager.default.attributesOfItem(atPath: Self.logURL.path)[.size] as? Int) ?? 0
+        if size == 0 || size > Self.maxLogBytes {
+            FileManager.default.createFile(atPath: Self.logURL.path, contents: nil)
+        }
         let log = try FileHandle(forWritingTo: Self.logURL)
+        try log.seekToEnd()
         p.standardError = log
         p.terminationHandler = { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.process === p else { return }
                 self.process = nil
                 self.endpoint = nil
-                self.onExit?()
             }
         }
         try p.run()
         process = p
         stdin = input
 
-        // The first line of stdout is {"addr":"127.0.0.1:port"}.
+        // The first line of stdout is {"addr":"127.0.0.1:port"}. A daemon
+        // that never prints it is stopped, which closes the pipe and ends
+        // the wait.
         struct Ready: Decodable { var addr: String }
+        let watchdog = Task {
+            try await Task.sleep(for: Self.readyTimeout)
+            p.terminate()
+        }
+        defer { watchdog.cancel() }
         for try await line in output.fileHandleForReading.bytes.lines {
             if let ready = try? JSONDecoder().decode(Ready.self, from: Data(line.utf8)),
                let url = URL(string: "http://\(ready.addr)/") {
@@ -78,6 +91,7 @@ final class Daemon {
                 return found
             }
         }
+        process = nil
         // It exited without saying where it listens; its log says why.
         let tail = (try? String(contentsOf: Self.logURL, encoding: .utf8))?
             .split(separator: "\n").last.map(String.init) ?? ""

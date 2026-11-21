@@ -11,6 +11,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -50,6 +51,7 @@ type Engine interface {
 	LoginCookies(ctx context.Context, cookies map[string]string) (core.LoginStep, error)
 	Logout() error
 	History(ctx context.Context, thread core.ThreadID, before core.MessageID, n int) ([]core.Message, bool, error)
+	NewOTID() (string, error)
 	Send(ctx context.Context, thread core.ThreadID, text, otid string, replyTo core.MessageID) (string, error)
 	MarkRead(ctx context.Context, upTo core.Message) error
 	React(ctx context.Context, thread core.ThreadID, msg core.MessageID, emoji string, remove bool) error
@@ -72,6 +74,7 @@ func New(e Engine, token string, log zerolog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/login/submit", s.loginSubmit)
 	mux.HandleFunc("POST /v1/login/cookies", s.loginCookies)
 	mux.HandleFunc("POST /v1/logout", s.logout)
+	mux.HandleFunc("POST /v1/otid", s.otid)
 	mux.HandleFunc("GET /v1/threads/{thread}/messages", s.history)
 	mux.HandleFunc("POST /v1/threads/{thread}/messages", s.send)
 	mux.HandleFunc("PATCH /v1/threads/{thread}/messages/{message}", s.edit)
@@ -156,6 +159,9 @@ func writeEvent(w io.Writer, name string, body any) error {
 	if err != nil {
 		return err
 	}
+	// U+0085 is a line break to some stream readers, and encoding/json
+	// leaves it as it is; a raw one would cut the data line in two.
+	data = bytes.ReplaceAll(data, []byte("\u0085"), []byte(`\u0085`))
 	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, data)
 	return err
 }
@@ -201,6 +207,15 @@ func (s *server) logout(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	reply(w, struct{}{})
+}
+
+func (s *server) otid(w http.ResponseWriter, _ *http.Request) {
+	id, err := s.e.NewOTID()
+	if err != nil {
+		s.failWith(w, err)
+		return
+	}
+	reply(w, map[string]string{"otid": id})
 }
 
 func (s *server) history(w http.ResponseWriter, r *http.Request) {

@@ -56,7 +56,8 @@ final class Settings {
     /// Show the message's text in its notification.
     var notificationPreviews: Bool { didSet { defaults.set(notificationPreviews, forKey: "notificationPreviews") } }
     var shortcut: Shortcut? {
-        didSet { defaults.set(shortcut.flatMap { try? JSONEncoder().encode($0) }, forKey: "shortcut") }
+        // No shortcut is saved as empty data, which is not "never set".
+        didSet { defaults.set(shortcut.flatMap { try? JSONEncoder().encode($0) } ?? Data(), forKey: "shortcut") }
     }
     /// Per-thread marks for conversations seen here with read receipts off.
     var seenMs: [String: Int64] { didSet { defaults.set(seenMs, forKey: "seenMs") } }

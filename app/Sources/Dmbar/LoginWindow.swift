@@ -14,6 +14,10 @@ final class LoginWindow: NSObject, NSWindowDelegate, WKHTTPCookieStoreObserver {
     private var window: NSWindow?
     private var store: WKHTTPCookieStore?
     private var submitted = false
+    /// A check is reading the cookies.
+    private var checking = false
+    /// The cookies changed while a check was reading them.
+    private var recheck = false
     /// Logs in with the cookies and returns nil, or says why it failed.
     private let login: ([String: String]) async -> String?
 
@@ -53,11 +57,23 @@ final class LoginWindow: NSObject, NSWindowDelegate, WKHTTPCookieStoreObserver {
     }
 
     private func check() async {
-        guard !submitted, let store else { return }
-        var found: [String: String] = [:]
-        for cookie in await store.allCookies() where cookie.domain.hasSuffix("instagram.com") && Self.wanted.contains(cookie.name) {
-            found[cookie.name] = cookie.value
+        // Cookie changes arrive in bursts: one check at a time, and one more
+        // after it if anything changed while it read.
+        guard !checking else {
+            recheck = true
+            return
         }
+        guard !submitted, let store else { return }
+        checking = true
+        var found: [String: String] = [:]
+        repeat {
+            recheck = false
+            found = [:]
+            for cookie in await store.allCookies() where cookie.domain.hasSuffix("instagram.com") && Self.wanted.contains(cookie.name) {
+                found[cookie.name] = cookie.value
+            }
+        } while recheck
+        checking = false
         // sessionid only exists once Instagram has finished logging in.
         guard !(found["sessionid"] ?? "").isEmpty, found["ds_user_id"] != nil, found["csrftoken"] != nil else { return }
         submitted = true

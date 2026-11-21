@@ -115,6 +115,30 @@ private func inbox() -> Inbox {
         #expect(i.typists(in: "20", now: now.addingTimeInterval(1)).isEmpty)
     }
 
+    @Test func `the first message of a thread the inbox didn't have still notifies`() {
+        var i = inbox()
+        let m = message("n1", thread: "30", at: 900)
+        // The daemon sends the thread first, already holding the message.
+        i.apply(.threadUpdated(ChatThread(id: "30", title: "New", isGroup: false, members: [alice], lastActivityMs: 900,
+                                          unread: true, muted: false, lastMessage: m, readUpToMs: [:])))
+        #expect(i.shouldNotify(m))
+        i.apply(.messageAdded(m))
+        #expect(!i.shouldNotify(m), "but only once")
+        // A rename of a known thread doesn't make its newest message news again.
+        i.apply(.threadUpdated(i.thread("20")!))
+        #expect(!i.shouldNotify(message("m1", at: 200)))
+    }
+
+    @Test func `a send whose echo was missed is settled by the history`() {
+        var i = inbox()
+        i.pending = [
+            Pending(id: UUID(), threadId: "20", text: "hello", otid: "o1", createdAt: .now),
+            Pending(id: UUID(), threadId: "20", text: "still going", otid: "o2", createdAt: .now),
+        ]
+        i.load([message("m1", at: 200), message("s1", from: me, at: 300, text: "hello", otid: "o1")], more: false, thread: "20", before: nil)
+        #expect(i.pending.map(\.text) == ["still going"])
+    }
+
     @Test func `another account clears what was loaded`() {
         var i = inbox()
         i.load([message("m1", at: 200)], more: false, thread: "20", before: nil)
@@ -157,5 +181,20 @@ private func inbox() -> Inbox {
     @Test(arguments: [("IMAGE", "Photo"), ("REEL_SHARE", "Reel"), ("VOICE_MEDIA", "Voice message"), ("WHO_KNOWS", "Message")])
     func `content types get a label`(type: String, label: String) {
         #expect(ContentLabel.label(for: type) == label)
+    }
+}
+
+@Suite struct SettingsTests {
+    @Test func `the shortcut defaults to control-option-I and a removed one stays removed`() throws {
+        let name = "dmbar-tests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        #expect(Settings(defaults: defaults).shortcut == .standard)
+        Settings(defaults: defaults).shortcut = nil
+        #expect(Settings(defaults: defaults).shortcut == nil)
+        let custom = Shortcut(keyCode: 46, modifiers: 256, key: "m")
+        Settings(defaults: defaults).shortcut = custom
+        #expect(Settings(defaults: defaults).shortcut == custom)
+        #expect(custom.display == "⌘M")
     }
 }

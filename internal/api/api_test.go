@@ -280,3 +280,34 @@ func TestInvalidInputIsABadRequest(t *testing.T) {
 		t.Fatalf("unknown login method: %d %v", status, body)
 	}
 }
+
+func TestOTIDAndLineBreakSafeEvents(t *testing.T) {
+	f := serve(t, true, nil)
+	if status, body := f.call(t, "POST", "/v1/otid", "", "Bearer "+token); status != 200 || body["otid"] == "" {
+		t.Fatalf("otid: %d %v", status, body)
+	}
+	req, _ := http.NewRequest("GET", f.url+"/v1/events", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	f.backend.Emit(core.MessageAdded{Message: core.Message{ID: "nel", Thread: 20, Sender: alice.ID, At: t0.Add(time.Second), Text: "caf\u0085e"}})
+	buf := make([]byte, 0, 4096)
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(string(buf), `"id":"nel"`) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no event; got %q", buf)
+		}
+		chunk := make([]byte, 2048)
+		n, err := resp.Body.Read(chunk)
+		buf = append(buf, chunk[:n]...)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Contains(string(buf), "\u0085") || !strings.Contains(string(buf), `caf\u0085e`) {
+		t.Fatalf("U+0085 isn't escaped in the stream: %q", buf)
+	}
+}

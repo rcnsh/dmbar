@@ -186,6 +186,7 @@ Stops the account and deletes the saved login. It doesn't end the session on Ins
 | Request | Body | Reply |
 |---|---|---|
 | `GET /v1/threads/{thread}/messages?before=<message id>&limit=<1-100>` | — | `{messages, more}` |
+| `POST /v1/otid` | — | `{otid}` |
 | `POST /v1/threads/{thread}/messages` | `{text, otid?, reply_to?}` | `{otid}` |
 | `PATCH /v1/threads/{thread}/messages/{message}` | `{text}` | `{}` |
 | `DELETE /v1/threads/{thread}/messages/{message}` | — | `{}` |
@@ -196,7 +197,7 @@ Stops the account and deletes the saved login. It doesn't end the session on Ins
 | `POST /v1/threads/{thread}/typing` | `{active}` | `{}` |
 
 - **History** returns messages oldest first. Without `before` it returns the newest; `limit` defaults to 30. `more` says whether older ones remain. The daemon keeps no history, so each call goes to Instagram.
-- **Send** succeeds when Instagram accepts the message. The message itself arrives as a `message_added` with the same `otid`: show it as pending until then. To retry a failed send, pass the `otid` the first attempt returned or used, and Instagram won't duplicate it.
+- **Send** succeeds when Instagram accepts the message. The message itself arrives as a `message_added` with the same `otid`: show it as pending until then. To retry a failed send, pass the `otid` the first attempt used, and Instagram won't duplicate it. A failed attempt returns none, so get one from `POST /v1/otid` before the first attempt and send with it.
 - **Edit** and **unsend** work on the user's own messages and arrive back as `message_edited` and `message_unsent`.
 - **Reaction**: a member has at most one reaction per message, so `PUT` replaces. `DELETE` must name the emoji being removed.
 - **Read** takes the thread's newest message and its exact `at_ms`. A `thread_read` event follows.

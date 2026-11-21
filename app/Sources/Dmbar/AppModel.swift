@@ -37,6 +37,8 @@ final class AppModel {
     private var client: Client?
     private var runner: Task<Void, Never>?
     private var lastTypingSent: [String: Date] = [:]
+    /// Threads with a read being sent to Instagram.
+    private var markingRead: Set<String> = []
 
     init(settings: Settings = Settings()) {
         self.settings = settings
@@ -49,7 +51,8 @@ final class AppModel {
     /// or the stream dies, it starts again after a pause.
     func start() {
         guard runner == nil else { return }
-        daemon.onExit = { [weak self] in self?.restart() }
+        // A daemon that dies takes the event stream with it, which lands in
+        // the retry below: one path, with its backoff.
         runner = Task { [weak self] in
             var delay = 1.0
             while !Task.isCancelled {
@@ -82,13 +85,6 @@ final class AppModel {
         runner?.cancel()
         runner = nil
         daemon.stop()
-    }
-
-    private func restart() {
-        runner?.cancel()
-        runner = nil
-        client = nil
-        start()
     }
 
     private func handle(_ event: ServerEvent) {
@@ -151,13 +147,30 @@ final class AppModel {
 
     private func markRead(thread: String, newest: Message) {
         // Hidden here at once, either way.
-        inbox.seenMs[thread] = max(inbox.seenMs[thread] ?? 0, newest.atMs)
+        let before = inbox.seenMs[thread]
+        setSeen(thread, max(before ?? 0, newest.atMs))
+        guard settings.readReceipts else { return }
+        guard let client, !markingRead.contains(thread) else {
+            if client == nil { setSeen(thread, before) }
+            return
+        }
+        markingRead.insert(thread)
+        Task {
+            defer { markingRead.remove(thread) }
+            do {
+                try await client.markRead(thread: thread, messageId: newest.id, atMs: newest.atMs)
+            } catch {
+                // Instagram wasn't told, so the thread is unread again here
+                // and the next event or opening of the popover tries again.
+                if inbox.seenMs[thread] == newest.atMs { setSeen(thread, before) }
+            }
+        }
+    }
+
+    private func setSeen(_ thread: String, _ ms: Int64?) {
+        inbox.seenMs[thread] = ms
         settings.seenMs = inbox.seenMs
         onChange?()
-        guard settings.readReceipts, let client else { return }
-        Task {
-            try? await client.markRead(thread: thread, messageId: newest.id, atMs: newest.atMs)
-        }
     }
 
     // MARK: Writing
@@ -192,12 +205,16 @@ final class AppModel {
         }
         Task {
             do {
-                let otid = try await client.send(thread: p.threadId, text: p.text, otid: p.otid, replyTo: p.replyTo?.id)
-                // The echo may have come first and removed it already.
-                if let i = inbox.pending.firstIndex(where: { $0.id == id }) {
-                    let echoed = inbox.messages[p.threadId]?.contains { $0.otid == otid } ?? false
-                    if echoed { inbox.pending.remove(at: i) } else { inbox.pending[i].otid = otid }
+                // The send's ID is fixed before the first attempt, so a retry
+                // after a lost reply can't deliver the message twice.
+                var otid = p.otid
+                if otid == nil {
+                    let new = try await client.newOTID()
+                    otid = new
+                    guard let i = inbox.pending.firstIndex(where: { $0.id == id }) else { return }  // discarded meanwhile
+                    inbox.pending[i].otid = new
                 }
+                _ = try await client.send(thread: p.threadId, text: p.text, otid: otid, replyTo: p.replyTo?.id)
             } catch {
                 fail(id)
                 toast = "Not sent: \(error.localizedDescription)"

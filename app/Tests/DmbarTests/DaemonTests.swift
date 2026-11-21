@@ -61,6 +61,19 @@ struct DaemonTests {
         #expect(inbox.pending.isEmpty, "the echo replaced the pending copy")
         #expect(inbox.messages["101"]?.last?.id == echoed?.id)
 
+        // U+0085 and U+2028 are line breaks to some readers; the stream
+        // must carry them inside a message without breaking.
+        let odd = "caf\u{85}e \u{2028} ok"
+        let oddID = try await client.newOTID()
+        _ = try await client.send(thread: "101", text: odd, otid: oddID, replyTo: nil)
+        var oddEcho: Message?
+        while oddEcho == nil {
+            let event = try #require(try await events.next())
+            inbox.apply(event)
+            if case .messageAdded(let m) = event, m.otid == oddID { oddEcho = m }
+        }
+        #expect(oddEcho?.text == odd)
+
         let last = try #require(inbox.thread("101")?.lastMessage)
         try await client.markRead(thread: "101", messageId: last.id, atMs: last.atMs)
         try await client.typing(thread: "101", active: true)

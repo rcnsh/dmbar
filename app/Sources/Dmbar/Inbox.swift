@@ -35,6 +35,12 @@ nonisolated struct Inbox: Sendable {
     /// receipts are off.
     var seenMs: [String: Int64] = [:]
 
+    /// The time of the newest message counted per thread, so one delivered
+    /// again, or an older one arriving late, isn't announced. A thread first
+    /// heard of through `thread_updated` starts at 0: the daemon sends that
+    /// just before the thread's new message, which must still be announced.
+    private(set) var countedMs: [String: Int64] = [:]
+
     /// How long a typing indicator lasts without a stop.
     static let typingLifetime: TimeInterval = 8
 
@@ -55,11 +61,10 @@ nonisolated struct Inbox: Sendable {
     }
 
     /// Whether a new message deserves a notification: from someone else, in
-    /// a thread that isn't muted, and not one already known.
+    /// a thread that isn't muted, and newer than anything already counted.
     func shouldNotify(_ m: Message) -> Bool {
         guard let me, m.senderId != me.id, let t = thread(m.threadId), !t.muted else { return false }
-        if let last = t.lastMessage, last.id == m.id || m.atMs <= last.atMs { return false }
-        return true
+        return m.atMs > (countedMs[m.threadId] ?? 0)
     }
 
     mutating func apply(_ event: ServerEvent, now: Date = .now) {
@@ -70,11 +75,18 @@ nonisolated struct Inbox: Sendable {
                 messages = [:]; hasOlder = [:]; pending = []; typing = [:]
             }
             connection = s.state; error = s.error; me = s.me; threads = s.threads
+            // Everything in a fresh inbox is old news.
+            countedMs = Dictionary(uniqueKeysWithValues: s.threads.map { ($0.id, $0.newestMs) })
             sortThreads()
         case .status(let c, let e):
             connection = c; error = e
         case .threadUpdated(let t):
-            if let i = threads.firstIndex(where: { $0.id == t.id }) { threads[i] = t } else { threads.append(t) }
+            if let i = threads.firstIndex(where: { $0.id == t.id }) {
+                threads[i] = t
+            } else {
+                threads.append(t)
+                countedMs[t.id] = 0
+            }
             sortThreads()
         case .messageAdded(let m):
             add(m)
@@ -119,6 +131,10 @@ nonisolated struct Inbox: Sendable {
         all = page.filter { !known.contains($0.id) } + all + live
         messages[thread] = all.sorted { ($0.atMs, $0.id) < ($1.atMs, $1.id) }
         hasOlder[thread] = more
+        // A send whose echo was missed, say while reconnecting, is in the
+        // history: its pending copy has done its job.
+        let sent = Set(page.lazy.filter { !$0.otid.isEmpty }.map(\.otid))
+        pending.removeAll { $0.threadId == thread && $0.otid.map(sent.contains) == true }
     }
 
     private mutating func add(_ m: Message) {
@@ -135,6 +151,7 @@ nonisolated struct Inbox: Sendable {
             messages[m.threadId] = list
         }
         typing[m.threadId]?[m.senderId] = nil
+        countedMs[m.threadId] = max(countedMs[m.threadId] ?? 0, m.atMs)
         let fromMe = m.senderId == me?.id
         update(m.threadId) { t in
             if let last = t.lastMessage, last.id == m.id { return }  // delivered again
