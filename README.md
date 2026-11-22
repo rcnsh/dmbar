@@ -70,6 +70,12 @@ The login is saved in `~/Library/Application Support/dmbar` and restored on the 
 - [docs/instameow.md](docs/instameow.md): how the upstream library behaves and how the backend uses it.
 - [docs/instagram-ids.md](docs/instagram-ids.md): the thread and user IDs, verified against a real account by termeownal.
 
-## Licence
+## Licence and credits
 
-AGPL-3.0, because `mautrix-meta` and termeownal are. The files taken from termeownal keep its copyright notice.
+AGPL-3.0, because `mautrix-meta` and termeownal are.
+
+- [mautrix-meta](https://github.com/mautrix/meta) (AGPL-3.0, Tulir Asokan and contributors) speaks Instagram's protocol. It is a Go module dependency, unchanged.
+- [termeownal](https://github.com/ericliswan/termeownal) (AGPL-3.0, Copyright (C) 2026 ericliswan) is where `internal/core` and `internal/instagram` come from. Those files keep its copyright notice, and the ones changed for dmbar say so under it.
+- [gemoji](https://github.com/github/gemoji) (MIT, Copyright (c) 2019 GitHub, Inc.) supplies the emoji and their `:shortcode:` names. Its licence is in the header of the generated `app/Sources/Dmbar/EmojiData.swift`.
+
+Not affiliated with Instagram or Meta.

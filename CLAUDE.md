@@ -28,7 +28,7 @@ To screenshot the popover, capture its window only, never the screen: find the w
 - Before touching anything about thread or user IDs, read `docs/instagram-ids.md`. A thread has three IDs and each call wants a particular one.
 - `instameow` is an unstable internal API of the upstream bridge. `docs/instameow.md` records how it behaves at the pinned version; check the pinned source in the module cache before relying on a detail, and update that file when it changes.
 - Never log or commit cookies, the API token or message text. Login errors must not quote what the user pasted.
-- Files with a termeownal copyright header came from it. Keep the header when editing them.
+- Files with a termeownal copyright header came from it. Keep the header when editing them, and the first time one is changed, add `// Modified for dmbar in 2026; its git history has the changes.` under its copyright line (AGPL §5a). New files get the dmbar header that `internal/instagram/cookies.go` has.
 - The licence is AGPL-3.0 and has to stay that way while the code links `mautrix-meta`.
 
 ## Design decisions
