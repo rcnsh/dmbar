@@ -69,8 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 // DMBAR_ROUTE=settings, or a thread ID, picks the screen.
                 switch ProcessInfo.processInfo.environment["DMBAR_ROUTE"] {
                 case "settings": model.route = .settings
-                case let id?: model.open(id)
-                case nil: break
+                case let id? where !id.isEmpty: model.open(id)
+                default: break
                 }
                 show()
             }

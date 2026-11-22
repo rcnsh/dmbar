@@ -1,6 +1,6 @@
 # dmbar
 
-Instagram DMs in the macOS menu bar. Personal tool for one user and one account, installed on his Mac only: no notarisation, no updater, no public release. The Go daemon `dmbard` is at the root; the Swift app is in `app/`. README.md has the layout and what v1 covers.
+Instagram DMs in the macOS menu bar. Personal tool for one user and one account, installed on his Mac only: no notarisation, no updater, no release builds. The repo is public (github.com/rcnsh/dmbar), so nothing in it may hold real account data: tests, docs and screenshots use the made-up inbox in `internal/fake`. README screenshots are in `docs/screenshots`; retake them with `make app-demo` and the window capture below when the UI changes visibly. The Go daemon `dmbard` is at the root; the Swift app is in `app/`. README.md has the layout and what v1 covers.
 
 ## Before finishing a change
 

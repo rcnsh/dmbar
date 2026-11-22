@@ -1,17 +1,56 @@
-# dmbar
+<h1 align="center">dmbar</h1>
 
-Instagram DMs as a small macOS menu bar box, with notifications and replying.
+<p align="center">
+  Instagram DMs in the macOS menu bar.<br>
+  Read, reply and react from a small native popover, with notifications you can answer inline.
+</p>
 
-Two parts: `dmbard`, a Go daemon that logs in to Instagram, keeps the live connection up and serves a small HTTP API on loopback; and the menu bar app in `app/`, native Swift with Liquid Glass, which starts the daemon and talks only to that API.
+<p align="center">
+  <img src="docs/screenshots/inbox.png" width="32%" alt="The inbox: four conversations, two unread">
+  <img src="docs/screenshots/thread.png" width="32%" alt="A conversation with a quoted reply and a photo">
+  <img src="docs/screenshots/group.png" width="32%" alt="A group chat with avatars and sender names">
+</p>
 
-It reads and sends text: the inbox, conversations with history, replies, reacting and reactions shown, read state, typing both ways, notifications with an inline reply. Photos, GIFs, stickers and videos show in the conversation and open in a viewer; view-once media, reels, shared posts and voice notes show as a labelled placeholder. Emoji come from a picker in the composer or by name, typing `:fire:` the way Slack and GitHub do. Starting a conversation, message requests and sending media aren't there yet.
+<p align="center"><sub>Screenshots use the built-in demo inbox: the people and messages are made up.</sub></p>
 
-Personal project. It uses Instagram's unofficial web protocol, which Instagram's terms don't allow: the account can be challenged or locked.
+> [!WARNING]
+> dmbar uses Instagram's unofficial web protocol, which Instagram's terms don't allow. The account can be challenged or locked. It is a personal project, not affiliated with Instagram or Meta, and there are no release builds: you build it yourself.
+
+## What it does
+
+- **Inbox and conversations:** the inbox, full history paged in as you scroll, group chats, read state and typing indicators both ways.
+- **Replying:** send text, quote-reply, react and see reactions. Notifications carry an inline reply field.
+- **Media:** photos, GIFs, stickers and videos show in the conversation and open in a viewer. View-once media, reels, shared posts and voice notes show as a labelled placeholder.
+- **Emoji:** a picker in the composer, or type `:fire:` the way Slack and GitHub do.
+- **Privacy switches:** read receipts and your typing indicator can be turned off. With receipts off, opening a conversation clears it on your Mac and tells Instagram nothing.
+- **Gets out of the way:** lives only in the menu bar, opens from anywhere with ⌃⌥I, and still works when a menu bar manager hides the icon.
+
+Not there yet: starting a new conversation, message requests and sending media.
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="32%" alt="Settings: account, read receipts, typing indicator, notifications, launch at login and shortcut">
+</p>
+
+## Install
+
+You need an Apple silicon Mac on macOS 26 or newer, Go 1.26 or newer and Xcode 26 or newer.
+
+```sh
+git clone https://github.com/rcnsh/dmbar
+cd dmbar
+make install    # builds dmbar.app, copies it to /Applications and opens it
+```
+
+Log in on Instagram's own page from the welcome screen. The session is kept on your Mac, encrypted under a key in your Keychain, in `~/Library/Application Support/dmbar`. The daemon's log is `~/Library/Logs/dmbar/dmbard.log`.
+
+The build is signed with your Developer ID if one is in your keychain, and ad hoc otherwise.
 
 ## How it fits together
 
+dmbar is two programs. `dmbard` is a Go daemon that logs in to Instagram, keeps the live connection up and serves a small HTTP API on loopback. The app in `app/` is native Swift and SwiftUI with Liquid Glass. It starts the daemon and talks only to that API.
+
 ```
-app/                the menu bar app (SwiftUI in an NSPopover), macOS 26+
+app/                the menu bar app (SwiftUI in an NSPopover)
       │  HTTP + server-sent events on 127.0.0.1, bearer token   → docs/api.md
 cmd/dmbard
       │
@@ -24,23 +63,18 @@ internal/core       the types and interfaces between the two, taken from termeow
 go.mau.fi/mautrix-meta/pkg/instameow   the protocol itself (upstream)
 ```
 
-`internal/core` and `internal/instagram` come from [termeownal](https://github.com/ericliswan/termeownal) at commit `bb046f1`, with its tests. They are the part that knows how to drive `instameow`: restoring a session, loading the inbox, the three kinds of thread ID, turning Instagram's deltas into events, reconnecting after sleep. termeownal's terminal UI, SQLite cache and passphrase fallback were left behind.
+The protocol code is Go and changes upstream every month, so it stays in its own process: when Instagram changes something, updating `mautrix-meta` is usually the whole fix. Nothing is cached on disk. The daemon starts cold, keeps the first inbox page in memory and fetches history on demand.
 
-## The app
-
-Needs Go 1.26 or newer and Xcode 26 or newer.
+## Development
 
 ```sh
-make install    # build, copy to /Applications/dmbar.app and open
-make app-demo   # the built app on a made-up inbox, popover open; no account
 make check      # gofmt, vet, Go tests with the race detector, Swift tests
+make app-demo   # the built app on a made-up inbox, popover open; no account needed
 ```
 
-The app lives in the menu bar only. Log in on Instagram's own page from the welcome screen; the session is kept on this Mac. ⌃⌥I opens it from anywhere, and the shortcut, read receipts, typing indicator, notifications and launch at login are in its settings. If a menu bar manager hides the icon, the shortcut still opens the box, hanging from the top right of the screen.
+`DMBAR_ROUTE=settings` or a demo thread ID (`101`, `900`) opens `make app-demo` on that screen.
 
-The daemon's log is `~/Library/Logs/dmbar/dmbard.log`.
-
-## The daemon on its own
+The daemon runs on its own too:
 
 ```sh
 make run     # 127.0.0.1:7878, token "dev", debug logs
@@ -48,34 +82,32 @@ make demo    # the same on a made-up inbox
 make build   # bin/dmbard
 ```
 
-With `make run` going:
+With `make demo` going:
 
 ```sh
 curl -s -H 'Authorization: Bearer dev' 127.0.0.1:7878/v1/state
 curl -N -H 'Authorization: Bearer dev' 127.0.0.1:7878/v1/events
 ```
 
-To log in by hand, copy the `sessionid`, `csrftoken`, `ds_user_id`, `mid` and `ig_did` cookies from a browser logged in to instagram.com:
+To log in by hand with `make run`, copy the `sessionid`, `csrftoken`, `ds_user_id`, `mid` and `ig_did` cookies from a browser logged in to instagram.com:
 
 ```sh
 curl -s -H 'Authorization: Bearer dev' 127.0.0.1:7878/v1/login/cookies \
   -d '{"cookies":{"sessionid":"…","csrftoken":"…","ds_user_id":"…","mid":"…","ig_did":"…"}}'
 ```
 
-The login is saved in `~/Library/Application Support/dmbar` and restored on the next start.
+### Docs
 
-## Docs
-
-- [docs/api.md](docs/api.md): the HTTP API.
+- [docs/api.md](docs/api.md): the HTTP API between the app and the daemon.
 - [docs/instameow.md](docs/instameow.md): how the upstream library behaves and how the backend uses it.
 - [docs/instagram-ids.md](docs/instagram-ids.md): the thread and user IDs, verified against a real account by termeownal.
 
-## Licence and credits
+## Credits
 
-AGPL-3.0, because `mautrix-meta` and termeownal are.
+- **[mautrix-meta](https://github.com/mautrix/meta)** by Tulir Asokan and contributors (AGPL-3.0) speaks Instagram's protocol. It is a Go module dependency, used unchanged.
+- **[termeownal](https://github.com/ericliswan/termeownal)** by ericliswan (AGPL-3.0) is where `internal/core` and `internal/instagram` come from, at commit `bb046f1`, with their tests. That code knows how to drive `instameow`: restoring a session, loading the inbox, the three kinds of thread ID, turning Instagram's deltas into events and reconnecting after sleep. Those files keep its copyright notice, and the ones changed for dmbar say so under it.
+- **[gemoji](https://github.com/github/gemoji)** by GitHub (MIT) supplies the emoji and their `:shortcode:` names. Its licence is in the header of the generated `app/Sources/Dmbar/EmojiData.swift`.
 
-- [mautrix-meta](https://github.com/mautrix/meta) (AGPL-3.0, Tulir Asokan and contributors) speaks Instagram's protocol. It is a Go module dependency, unchanged.
-- [termeownal](https://github.com/ericliswan/termeownal) (AGPL-3.0, Copyright (C) 2026 ericliswan) is where `internal/core` and `internal/instagram` come from. Those files keep its copyright notice, and the ones changed for dmbar say so under it.
-- [gemoji](https://github.com/github/gemoji) (MIT, Copyright (c) 2019 GitHub, Inc.) supplies the emoji and their `:shortcode:` names. Its licence is in the header of the generated `app/Sources/Dmbar/EmojiData.swift`.
+## Licence
 
-Not affiliated with Instagram or Meta.
+[AGPL-3.0](LICENSE), because `mautrix-meta` and termeownal are. If you run a changed version for other people over a network, you have to offer them its source.
