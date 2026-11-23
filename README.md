@@ -23,7 +23,7 @@
 - **Media:** photos, GIFs, stickers and videos show in the conversation and open in a viewer. View-once media, reels, shared posts and voice notes show as a labelled placeholder.
 - **Emoji:** a picker in the composer, or type `:fire:` the way Slack and GitHub do.
 - **Privacy switches:** read receipts and your typing indicator can be turned off. With receipts off, opening a conversation clears it on your Mac and tells Instagram nothing.
-- **Gets out of the way:** lives only in the menu bar, opens from anywhere with ⌃⌥I, and still works when a menu bar manager hides the icon.
+- **Gets out of the way:** lives only in the menu bar, opens from anywhere with ⌃⌥I, and still works when a menu bar manager hides the icon. Right-click the icon for unread chats, Mark All as Read, notifications on or off, and Quit.
 
 Not there yet: starting a new conversation, message requests and sending media.
 
@@ -72,7 +72,7 @@ make check      # gofmt, vet, Go tests with the race detector, Swift tests
 make app-demo   # the built app on a made-up inbox, popover open; no account needed
 ```
 
-`DMBAR_ROUTE=settings` or a demo thread ID (`101`, `900`) opens `make app-demo` on that screen.
+`DMBAR_ROUTE=settings`, `menu` (the right-click menu) or a demo thread ID (`101`, `900`) opens `make app-demo` on that screen.
 
 The daemon runs on its own too:
 

@@ -31,7 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(toggle)
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem.button?.imagePosition = .imageLeading
 
         popover.behavior = .transient
@@ -66,9 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if ProcessInfo.processInfo.environment["DMBAR_SHOW"] != nil {
             Task {
                 try? await Task.sleep(for: .seconds(1))
-                // DMBAR_ROUTE=settings, or a thread ID, picks the screen.
+                // DMBAR_ROUTE=settings, menu, or a thread ID, picks the screen.
                 switch ProcessInfo.processInfo.environment["DMBAR_ROUTE"] {
                 case "settings": model.route = .settings
+                case "menu": showMenu(); return
                 case let id? where !id.isEmpty: model.open(id)
                 default: break
                 }
@@ -106,6 +108,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     @objc private func toggle() {
         if popover.isShown { popover.performClose(nil) } else { show() }
+    }
+
+    /// A left click toggles the popover; a right or control-click opens the menu.
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            showMenu()
+        } else {
+            toggle()
+        }
+    }
+
+    /// Pops the menu from the item. Setting `menu` only for this click keeps
+    /// the left click for the popover, and lets AppKit place and highlight it.
+    /// A hidden item (see `show()`) has nowhere to drop from, so the menu
+    /// then pops from the same anchor the popover uses.
+    private func showMenu() {
+        popover.performClose(nil)
+        let menu = makeMenu()
+        if let button = statusItem.button, let window = button.window, window.frame.height > 1,
+           window.occlusionState.contains(.visible) {
+            statusItem.menu = menu
+            button.performClick(nil)
+            statusItem.menu = nil
+        } else if let view = fallbackAnchor() {
+            NSApp.activate()
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY), in: view)
+            anchor?.orderOut(nil)
+        }
+    }
+
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        let inbox = model.inbox
+        let loggedIn = inbox.connection != .loggedOut && inbox.connection != .loginRequired
+
+        let unread = inbox.threads.filter { !$0.muted && inbox.isUnread($0) }
+        if loggedIn, !unread.isEmpty {
+            menu.addItem(.sectionHeader(title: "Unread"))
+            for t in unread.prefix(Self.menuThreads) {
+                let item = ActionItem(t.title) { [weak self] in
+                    self?.model.open(t.id)
+                    self?.show()
+                }
+                item.image = NSImage(systemSymbolName: t.isGroup ? "person.2" : "person", accessibilityDescription: nil)
+                if model.settings.notificationPreviews, let m = t.lastMessage { item.subtitle = Self.oneLine(m.summary) }
+                menu.addItem(item)
+            }
+            if unread.count > Self.menuThreads {
+                menu.addItem(ActionItem("\(unread.count - Self.menuThreads) more…") { [weak self] in
+                    self?.model.route = .list
+                    self?.show()
+                })
+            }
+            menu.addItem(.separator())
+        }
+
+        menu.addItem(ActionItem("Open dmbar") { [weak self] in self?.show() })
+        if loggedIn {
+            let markAll = ActionItem("Mark All as Read") { [weak self] in self?.model.markAllRead() }
+            // Offline, Instagram can't be told and the marks would be undone.
+            markAll.isEnabled = inbox.connection == .connected && !model.markableUnread.isEmpty
+            menu.addItem(markAll)
+        } else {
+            menu.addItem(ActionItem("Log In…") { [weak self] in self?.showLogin() })
+        }
+        menu.addItem(.separator())
+
+        let notifications = ActionItem("Notifications") { [weak self] in
+            guard let self else { return }
+            self.model.settings.notifications.toggle()
+        }
+        notifications.state = model.settings.notifications ? .on : .off
+        menu.addItem(notifications)
+        menu.addItem(ActionItem("Settings…", key: ",") { [weak self] in
+            self?.model.route = .settings
+            self?.show()
+        })
+        menu.addItem(.separator())
+        menu.addItem(ActionItem("Quit dmbar", key: "q") { NSApp.terminate(nil) })
+        return menu
+    }
+
+    /// How many unread conversations the menu lists by name.
+    private static let menuThreads = 5
+
+    /// A message as one short line, so a long one can't stretch the menu.
+    private static func oneLine(_ text: String, limit: Int = 60) -> String {
+        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return flat.count > limit ? flat.prefix(limit - 1) + "…" : flat
     }
 
     private func show() {
@@ -158,4 +250,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         model.popoverVisible = false
         anchor?.orderOut(nil)
     }
+}
+
+/// A menu item that runs a closure, so menus need no selector per item. The
+/// item keeps the closure's target alive: `target` alone is weak.
+private func ActionItem(_ title: String, key: String = "", run: @escaping () -> Void) -> NSMenuItem {
+    let action = MenuAction(run)
+    let item = NSMenuItem(title: title, action: #selector(MenuAction.fire), keyEquivalent: key)
+    item.target = action
+    item.representedObject = action
+    return item
+}
+
+private final class MenuAction: NSObject {
+    private let run: () -> Void
+    init(_ run: @escaping () -> Void) { self.run = run }
+    @objc func fire() { run() }
 }

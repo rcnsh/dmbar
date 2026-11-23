@@ -178,6 +178,17 @@ final class AppModel {
         }
     }
 
+    /// Unmuted conversations with something unread: what the badge counts.
+    var markableUnread: [ChatThread] {
+        inbox.threads.filter { !$0.muted && inbox.isUnread($0) && $0.lastMessage != nil }
+    }
+
+    /// Marks every unread conversation the badge counts read, the same way
+    /// opening each would.
+    func markAllRead() {
+        for t in markableUnread { if let newest = t.lastMessage { markRead(thread: t.id, newest: newest) } }
+    }
+
     private func setSeen(_ thread: String, _ ms: Int64?) {
         inbox.seenMs[thread] = ms
         settings.seenMs = inbox.seenMs

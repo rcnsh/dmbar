@@ -4,7 +4,7 @@ Instagram DMs in the macOS menu bar. Personal tool for one user and one account,
 
 ## Before finishing a change
 
-Run `make check`. It must pass. For anything visible, look at it: `make app-demo` opens the real app on a made-up inbox (`DMBAR_ROUTE=settings`, or a thread ID such as `101`, picks the screen). Never test against the real account by sending messages; Jacob does the real sends.
+Run `make check`. It must pass. For anything visible, look at it: `make app-demo` opens the real app on a made-up inbox (`DMBAR_ROUTE=settings`, `menu` for the right-click menu, or a thread ID such as `101`, picks the screen). Never test against the real account by sending messages; Jacob does the real sends.
 
 To screenshot the popover, capture its window only, never the screen: find the window ID of the `Dmbar` process with `CGWindowListCopyWindowInfo` and pass it to `screencapture -x -o -l <id>`. A lone window capture shows the glass as opaque.
 

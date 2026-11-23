@@ -33,7 +33,7 @@ install:
 	app/build.sh install
 
 # Opens the built app on the made-up inbox with its popover showing, without
-# touching the real login. DMBAR_ROUTE=settings or a thread ID (101, 900)
+# touching the real login. DMBAR_ROUTE=settings, menu or a thread ID (101, 900)
 # picks the screen.
 app-demo: app
 	-pkill -x Dmbar
