@@ -2,10 +2,12 @@ import SwiftUI
 
 /// The look shared across screens.
 enum Theme {
-    /// Instagram's gradient, kept for the unread mark and the app's own accents.
+    /// Instagram's gradient, kept for the app's own accents.
     static let brand = LinearGradient(
         colors: [Color(red: 0.98, green: 0.69, blue: 0.25), Color(red: 0.91, green: 0.19, blue: 0.42), Color(red: 0.51, green: 0.23, blue: 0.86)],
         startPoint: .bottomLeading, endPoint: .topTrailing)
+    /// Instagram's blue (#0095F6), for the unread mark.
+    static let unread = Color(red: 0, green: 149 / 255, blue: 246 / 255)
     /// The user's own bubbles.
     static let mine = LinearGradient(
         colors: [Color(red: 0.42, green: 0.36, blue: 0.98), Color(red: 0.62, green: 0.32, blue: 0.94)],

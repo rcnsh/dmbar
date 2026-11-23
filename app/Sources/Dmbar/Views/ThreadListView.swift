@@ -90,7 +90,7 @@ private struct ThreadRow: View {
                     .foregroundStyle(unread ? .primary : .tertiary)
                     .monospacedDigit()
                 Circle()
-                    .fill(Theme.brand)
+                    .fill(Theme.unread)
                     .frame(width: 9, height: 9)
                     .opacity(unread ? 1 : 0)
                     .accessibilityHidden(!unread)
