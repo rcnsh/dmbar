@@ -85,10 +85,13 @@ private struct ThreadRow: View {
             }
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 6) {
-                Text(Format.short(thread.newestMs))
-                    .font(.caption)
-                    .foregroundStyle(unread ? .primary : .tertiary)
-                    .monospacedDigit()
+                // Redrawn each minute so "now", "5m" and "3h" age while the popover is open.
+                TimelineView(.everyMinute) { context in
+                    Text(Format.short(thread.newestMs, now: context.date))
+                        .font(.caption)
+                        .foregroundStyle(unread ? .primary : .tertiary)
+                        .monospacedDigit()
+                }
                 Circle()
                     .fill(Theme.unread)
                     .frame(width: 9, height: 9)

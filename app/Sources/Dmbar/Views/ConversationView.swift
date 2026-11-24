@@ -67,11 +67,14 @@ struct ConversationView: View {
                     let previous = i > 0 ? messages[i - 1] : nil
                     let next = i + 1 < messages.count ? messages[i + 1] : nil
                     if previous.map({ !Calendar.current.isDate($0.date, inSameDayAs: message.date) }) ?? true {
-                        Text(Format.day(message.date))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 12)
-                            .padding(.bottom, 6)
+                        // Redrawn each minute so "Today" becomes "Yesterday" at midnight.
+                        TimelineView(.everyMinute) { context in
+                            Text(Format.day(message.date, now: context.date))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 12)
+                                .padding(.bottom, 6)
+                        }
                     }
                     MessageRow(
                         message: message,

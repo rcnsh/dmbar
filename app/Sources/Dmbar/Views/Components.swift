@@ -111,7 +111,7 @@ struct TypingDots: View {
     }
 }
 
-enum Format {
+nonisolated enum Format {
     /// A short time for a list row: "now", "5m", "3h", "Tue", "12 Mar".
     static func short(_ ms: Int64, now: Date = .now) -> String {
         guard ms > 0 else { return "" }
@@ -127,10 +127,12 @@ enum Format {
     }
 
     /// A heading for a day in a conversation: "Today", "Yesterday", "Tue 12 Mar".
-    static func day(_ date: Date) -> String {
+    static func day(_ date: Date, now: Date = .now) -> String {
         let cal = Calendar.current
-        if cal.isDateInToday(date) { return "Today" }
-        if cal.isDateInYesterday(date) { return "Yesterday" }
+        if cal.isDate(date, inSameDayAs: now) { return "Today" }
+        if let yesterday = cal.date(byAdding: .day, value: -1, to: now), cal.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday"
+        }
         return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
     }
 }
